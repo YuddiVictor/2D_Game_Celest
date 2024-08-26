@@ -1,23 +1,30 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using static UnityEditor.PlayerSettings;
 
 public class PlayerController : MonoBehaviour
 {
-    public float moveSpeed = 5f;
-    public float jumpForce = 10f;
-    public int maxJumps = 1;
-    public int maxDash = 1;
-    public float dashSpeed = 20f;
-    public float dashDuration = 0.2f;
 
-    private int jumpCount;
-    private int dashCount;
+    [Header("Movement")]
+    [SerializeField] public float moveSpeed = 5f;
     private Rigidbody2D rb;
-    private bool isGrounded;
-    private bool isDashing;
-    private float dashTimeLeft;
+
+    [Header("Jump")]
+    [SerializeField] public int maxJumps = 1;
+    [SerializeField] public float jumpForce = 10f;
+    [SerializeField] private bool isGrounded = true;
+    private int jumpCount;
+
+    [Header("Dashing")]
+    [SerializeField] public float dashSpeed = 20f;
+    [SerializeField] public float dashDuration = 0.2f;
+    [SerializeField] private int dashCount;
+    [SerializeField] public int maxDash = 1;
     private Vector2 dashDirection;
+    [SerializeField] public bool isDashing = false;
+    [SerializeField] public bool canDash = true;
+
 
     void Start()
     {
@@ -28,111 +35,112 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        if (!isDashing)
+
+        Move();
+        if (Input.GetButtonDown("Jump"))
         {
-            Move();
-            if (Input.GetButtonDown("Jump"))
-            {
-                Jump();
-            }
-            if (Input.GetButtonDown("Fire3")) // Fire3 é normalmente o botão "Shift Esquerdo" ou "Ctrl Esquerdo"
-            {
-                StartDash();
-            }
+            Jump();
         }
-        else
+
+        if (Input.GetButtonDown("DashInput") && canDash == true)
         {
             Dash();
-        }
-    }
+            if (isDashing == true)
+            {
+                Dashing();
+            }
 
-    void Move()
-    {
-        float moveInput = Input.GetAxis("Horizontal");
-        rb.velocity = new Vector2(moveInput * moveSpeed, rb.velocity.y);
-    }
-
-    void Jump()
-    {
-        if (Input.GetButtonDown("Jump") && jumpCount > 0)
-        {
-            rb.velocity = new Vector2(rb.velocity.x, 0);
-            rb.AddForce(new Vector2(0, jumpForce), ForceMode2D.Impulse);
-            jumpCount--;
-
-
-            // Notifica o cenário para rotacionar
-            FindObjectOfType<ScenarioRotator>().RotateScene();
         }
 
-        if (isGrounded)
+        void Move()
         {
-            jumpCount = maxJumps;
-        }
-    }
-
-    void OnCollisionEnter2D(Collision2D collision)
-    {
-        if (collision.gameObject.CompareTag("Ground"))
-        {
-            isGrounded = true;
-            jumpCount = maxJumps;
-            dashCount = maxDash;
+            float moveInput = Input.GetAxis("Horizontal");
+            rb.velocity = new Vector2(moveInput * moveSpeed, rb.velocity.y);
         }
 
-        // Detecta colisão com o objeto específico para "morrer"
-        if (collision.gameObject.CompareTag("Hazard"))
+        void Jump()
         {
-            DieAndRespawn();
+            if (Input.GetButtonDown("Jump") && jumpCount > 0)
+            {
+                rb.velocity = new Vector2(rb.velocity.x, 0);
+                rb.AddForce(new Vector2(0, jumpForce), ForceMode2D.Impulse);
+                jumpCount--;
+
+
+                // Notifica o cenário para rotacionar
+                FindObjectOfType<ScenarioRotator>().RotateScene();
+            }
+
+            if (isGrounded)
+            {
+                jumpCount = maxJumps;
+            }
         }
-    }
 
-    void OnCollisionStay2D(Collision2D collision)
-    {
-        if (collision.gameObject.CompareTag("Ground"))
+        void OnCollisionEnter2D(Collision2D collision)
         {
-            dashCount = maxDash;
+            if (collision.gameObject.CompareTag("Ground"))
+            {
+                isGrounded = true;
+                canDash = true;
+                jumpCount = maxJumps;
+                dashCount = maxDash;
+            }
+
+            // Detecta colisão com o objeto específico para "morrer"
+            if (collision.gameObject.CompareTag("Hazard"))
+            {
+                DieAndRespawn();
+            }
         }
-    }
 
-    void OnCollisionExit2D(Collision2D collision)
-    {
-        if (collision.gameObject.CompareTag("Ground"))
+        void OnCollisionStay2D(Collision2D collision)
         {
-            isGrounded = false;
+            if (collision.gameObject.CompareTag("Ground"))
+            {
+                dashCount = maxDash;
+            }
         }
-    }
 
-    void StartDash()
-    {
-        isDashing = true;
-        dashTimeLeft = dashDuration;
-
-        float moveInputX = Input.GetAxis("Horizontal");
-        float moveInputY = Input.GetAxis("Vertical");
-
-        // Definir a direção do dash com base nos inputs horizontal e vertical
-        dashDirection = new Vector2(moveInputX, moveInputY).normalized;
-    }
-
-    void Dash()
-    {
-        if (dashTimeLeft > 0 && dashCount > 0)
+        void OnCollisionExit2D(Collision2D collision)
         {
-            rb.velocity = dashDirection * dashSpeed;
-            dashTimeLeft -= Time.deltaTime;
-            dashCount--;
+            if (collision.gameObject.CompareTag("Ground"))
+            {
+                isGrounded = false;
+            }
         }
-        else
+
+        void Dash()
         {
+            isDashing = true;
+            canDash = false;
+            dashDirection = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+            if (dashDirection == Vector2.zero)
+            {
+                dashDirection = new Vector2(transform.localScale.x, 0);
+            }
+            StartCoroutine (StopDash());   
+        }
+
+        void Dashing()
+        {
+            rb.velocity = dashDirection.normalized * dashSpeed;
+            return;
+        }
+
+        IEnumerator StopDash()
+        {
+            yield return new WaitForSeconds(dashDuration);  
             isDashing = false;
         }
-    }
 
-    void DieAndRespawn()
-    {
-        // Lógica para "morrer" e respawnar
-        Debug.Log("Player collided with hazard and will respawn.");
-        FindObjectOfType<RespawnController>().TriggerRespawn();
+
+        void DieAndRespawn()
+        {
+            // Lógica para "morrer" e respawnar
+            Debug.Log("Player collided with hazard and will respawn.");
+            FindObjectOfType<RespawnController>().TriggerRespawn();
+        }
+
     }
 }
